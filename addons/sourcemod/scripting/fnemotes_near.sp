@@ -210,8 +210,8 @@ char  g_sEmoteSound[MAXPLAYERS+1][PLATFORM_MAX_PATH];
 
 bool  g_bClientDancing[MAXPLAYERS+1],
       g_bEmoteCooldown[MAXPLAYERS+1],
-      g_bHooked[MAXPLAYERS + 1];
-
+      g_bHooked[MAXPLAYERS + 1],
+      g_bSoundsCached;
 
 float  g_fLastAngles[MAXPLAYERS+1][3],
        g_fLastPosition[MAXPLAYERS+1][3];
@@ -274,6 +274,7 @@ public void OnPluginEnd()
     for (int i = 1; i <= MaxClients; i++)
         if (IsValidClient(i) && g_bClientDancing[i])
             StopEmote(i);
+    g_bSoundsCached = false;
 }
 
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
@@ -290,6 +291,8 @@ int Native_IsClientEmoting(Handle plugin, int numParams)
 
 public void OnMapStart()
 {
+    g_bSoundsCached = false;
+
     AddFileToDownloadsTable(FILE_MODEL_PATH);
     AddFileToDownloadsTable(FILE_MODEL_PATH_VDD);
     AddFileToDownloadsTable(FILE_MODEL_PATH_VTX);
@@ -330,18 +333,21 @@ public void OnMapStart()
             else
                 PrecacheEmoteSound(sound);
         }
-    }   
+    }
+
+    if (g_cvEmotesSounds.BoolValue) g_bSoundsCached = true;
+
 }
 
 void PrecacheEmoteSound(const char[] soundName)
 {
     if (!g_cvEmotesSounds.BoolValue) return;
+    static char fullPath[PLATFORM_MAX_PATH];
+    FormatEx(fullPath, sizeof(fullPath), "%s%s.mp3", SOUND_BASE_FULL, soundName);
     static char precachePath[PLATFORM_MAX_PATH];
     FormatEx(precachePath, sizeof(precachePath), "%s%s.mp3", SOUND_BASE_PATH, soundName);
-    if (PrecacheSound(precachePath))
+    if (FileExists(fullPath) && PrecacheSound(precachePath,true))
     {
-        static char fullPath[PLATFORM_MAX_PATH];
-        FormatEx(fullPath, sizeof(fullPath), "%s%s.mp3", SOUND_BASE_FULL, soundName);
         AddFileToDownloadsTable(fullPath);
     }
     else if (g_cvEmotesSounds.BoolValue)
@@ -887,7 +893,7 @@ Action CreateEmote(int client, const char[] anim1, const char[] anim2, const cha
             EF_BONEMERGE | EF_NOSHADOW | EF_NORECEIVESHADOW | EF_BONEMERGE_FASTCULL | EF_PARENT_ANIMATES);
 
         // Sound
-        if (g_cvEmotesSounds.BoolValue && !StrEqual(soundName, ""))
+        if (g_cvEmotesSounds.BoolValue && g_bSoundsCached && !StrEqual(soundName, ""))
         {
             int EmoteSoundEnt = CreateEntityByName("info_target");
             if (IsValidEntity(EmoteSoundEnt))
