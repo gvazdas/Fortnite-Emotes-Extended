@@ -296,6 +296,8 @@ public void OnMapStart()
 
     PrecacheModel(FILE_MODEL_PATH, true);
 
+    if (!g_cvEmotesSounds.BoolValue) return;
+
     char sound[64];
     for (int i = 0; i < EMOTES_COUNT; i++)
     {
@@ -328,18 +330,24 @@ public void OnMapStart()
             else
                 PrecacheEmoteSound(sound);
         }
-    }
+    }   
 }
 
 void PrecacheEmoteSound(const char[] soundName)
 {
-    char fullPath[PLATFORM_MAX_PATH];
-    FormatEx(fullPath, sizeof(fullPath), "%s%s.mp3", SOUND_BASE_FULL, soundName);
-    AddFileToDownloadsTable(fullPath);
-
-    char precachePath[PLATFORM_MAX_PATH];
+    static char precachePath[PLATFORM_MAX_PATH];
     FormatEx(precachePath, sizeof(precachePath), "%s%s.mp3", SOUND_BASE_PATH, soundName);
-    PrecacheSound(precachePath);
+    if (PrecacheSound(precachePath))
+    {
+        static char fullPath[PLATFORM_MAX_PATH];
+        FormatEx(fullPath, sizeof(fullPath), "%s%s.mp3", SOUND_BASE_FULL, soundName);
+        AddFileToDownloadsTable(fullPath);
+    }
+    else if (g_cvEmotesSounds.BoolValue)
+    {
+        g_cvEmotesSounds.SetBool(false);
+        LogMessage("PrecacheSound %s failed, sounds disabled.", soundName);
+    }
 }
 
 public void OnClientPutInServer(int client)
