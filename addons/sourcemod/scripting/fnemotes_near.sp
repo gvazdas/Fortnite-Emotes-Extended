@@ -335,6 +335,7 @@ public void OnMapStart()
 
 void PrecacheEmoteSound(const char[] soundName)
 {
+    if (!g_cvEmotesSounds.BoolValue) return;
     static char precachePath[PLATFORM_MAX_PATH];
     FormatEx(precachePath, sizeof(precachePath), "%s%s.mp3", SOUND_BASE_PATH, soundName);
     if (PrecacheSound(precachePath))
