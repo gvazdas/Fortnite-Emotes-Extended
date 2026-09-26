@@ -210,8 +210,9 @@ char  g_sEmoteSound[MAXPLAYERS+1][PLATFORM_MAX_PATH];
 
 bool  g_bClientDancing[MAXPLAYERS+1],
       g_bEmoteCooldown[MAXPLAYERS+1],
-      g_bHooked[MAXPLAYERS + 1],
-      g_bSoundsCached;
+      g_bHooked[MAXPLAYERS+1],
+      g_bSoundsCached,
+      g_bCfgExecuted;
 
 float  g_fLastAngles[MAXPLAYERS+1][3],
        g_fLastPosition[MAXPLAYERS+1][3];
@@ -250,7 +251,7 @@ public void OnPluginStart()
     HookEvent("round_start",        Event_Start);
     HookEvent("round_end",          Event_RoundEnd);
 
-    g_cvEmotesSounds  = CreateConVar("sm_emotes_sounds",            "1",    "Enable/Disable sounds for emotes.", FCVAR_NOTIFY);
+    g_cvEmotesSounds  = CreateConVar("sm_emotes_sounds",            "1",    "Enable/Disable sounds for emotes. Sounds will activate on next map.", FCVAR_NOTIFY);
     g_cvCooldown      = CreateConVar("sm_emotes_cooldown",          "1.0",  "Cooldown for emotes in seconds. -1 or 0 = no cooldown.", FCVAR_NOTIFY);
     g_cvFlagEmotesMenu= CreateConVar("sm_emotes_admin_flag_menu",   "",     "admin flag for emotes (empty for all players)");
     g_cvFlagDancesMenu= CreateConVar("sm_dances_admin_flag_menu",   "",     "admin flag for dances (empty for all players)");
@@ -269,12 +270,45 @@ public void OnPluginStart()
     AutoExecConfig(true, "fortnite_emotes_nearlycivilized");
 }
 
+public void OnConfigsExecuted()
+{
+    g_bCfgExecuted = true;
+}
+
+// For early read of cfg before AutoExecConfig. returns true on success
+stock bool ApplyCfgImmediately()
+{
+    File hFile = OpenFile("cfg/sourcemod/fortnite_emotes_nearlycivilized.cfg", "r");
+    if (hFile == null) return false;
+    static char line[PLATFORM_MAX_PATH];
+    static char cvarName[PLATFORM_MAX_PATH];
+    static char cvarValue[PLATFORM_MAX_PATH];
+    while (hFile.ReadLine(line,sizeof(line)))
+    {
+        TrimString(line);
+        if (strncmp(line,"sm_emotes_",10,false)!=0) continue; // allow only plugin cvars to be changed.
+        int spacePos = BreakString(line, cvarName, sizeof(cvarName));
+        if (spacePos == -1) continue;
+        ConVar cv = FindConVar(cvarName);
+        if (cv != null)
+        {
+            strcopy(cvarValue,PLATFORM_MAX_PATH,line[spacePos]);
+            TrimString(cvarValue);
+            StripQuotes(cvarValue);
+            if (cvarValue[0]==0) continue;
+            cv.SetString(cvarValue, true, false);
+            //if (DEBUG) LogMessage("ApplyCfgImmediately applied %s %s", cvarName, cvarValue);
+        }
+    }
+    delete hFile;
+    return true;
+}
+
 public void OnPluginEnd()
 {
     for (int i = 1; i <= MaxClients; i++)
         if (IsValidClient(i) && g_bClientDancing[i])
             StopEmote(i);
-    g_bSoundsCached = false;
 }
 
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
@@ -291,16 +325,21 @@ int Native_IsClientEmoting(Handle plugin, int numParams)
 
 public void OnMapStart()
 {
-    g_bSoundsCached = false;
 
     AddFileToDownloadsTable(FILE_MODEL_PATH);
     AddFileToDownloadsTable(FILE_MODEL_PATH_VDD);
     AddFileToDownloadsTable(FILE_MODEL_PATH_VTX);
-
     PrecacheModel(FILE_MODEL_PATH, true);
 
-    if (!g_cvEmotesSounds.BoolValue) return;
+    if (!g_bCfgExecuted) g_bCfgExecuted = ApplyCfgImmediately(); // if AutoExecConfig didn't run yet.
 
+    if (!g_cvEmotesSounds.BoolValue)
+    {
+        g_bSoundsCached = false;
+        return;
+    }
+
+    g_bSoundsCached = true;
     char sound[64];
     for (int i = 0; i < EMOTES_COUNT; i++)
     {
@@ -317,9 +356,11 @@ public void OnMapStart()
             else
                 PrecacheEmoteSound(sound);
         }
+        if (!g_bSoundsCached) break;
     }
     for (int i = 0; i < DANCES_COUNT; i++)
     {
+        if (!g_bSoundsCached) break;
         strcopy(sound, sizeof(sound), g_Dances[i].sound);
         if (!StrEqual(sound, ""))
         {
@@ -335,13 +376,11 @@ public void OnMapStart()
         }
     }
 
-    if (g_cvEmotesSounds.BoolValue) g_bSoundsCached = true;
-
 }
 
+// Precache sounds, with failure detection.
 void PrecacheEmoteSound(const char[] soundName)
 {
-    if (!g_cvEmotesSounds.BoolValue) return;
     static char fullPath[PLATFORM_MAX_PATH];
     FormatEx(fullPath, sizeof(fullPath), "%s%s.mp3", SOUND_BASE_FULL, soundName);
     static char precachePath[PLATFORM_MAX_PATH];
@@ -350,9 +389,9 @@ void PrecacheEmoteSound(const char[] soundName)
     {
         AddFileToDownloadsTable(fullPath);
     }
-    else if (g_cvEmotesSounds.BoolValue)
+    else if (g_bSoundsCached)
     {
-        g_cvEmotesSounds.SetBool(false);
+        g_bSoundsCached = false;
         LogMessage("PrecacheSound %s failed, sounds disabled.", soundName);
     }
 }
