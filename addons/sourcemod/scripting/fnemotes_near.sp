@@ -311,10 +311,10 @@ public void OnPluginStart()
     RegAdminCmd("sm_emote_debugtarget", Command_Debug_Target,       ADMFLAG_GENERIC, "For debugging rare glitch where dances suddenly stop mid-way.");
     
     RegConsoleCmd("sm_rdance",          Command_Random_Emote,       "Performs a random dance or emote");
-    RegConsoleCmd("sm_emotes",          Command_Menu);
-    RegConsoleCmd("sm_emote",           Command_Menu);
-    RegConsoleCmd("sm_dances",          Command_Menu);
-    RegConsoleCmd("sm_dance",           Command_Menu);
+    RegConsoleCmd("sm_emotes",          Command_Menu,               "Open menu, or provide Emote ID");
+    RegConsoleCmd("sm_emote",           Command_Menu,               "Open menu, or provide Emote ID");
+    RegConsoleCmd("sm_dances",          Command_Menu,               "Open menu, or provide Emote ID");
+    RegConsoleCmd("sm_dance",           Command_Menu,               "Open menu, or provide Emote ID");
     RegConsoleCmd("sm_doemote",         Command_Do_Emotes,          "sm_doemote [Emote ID]");
     RegConsoleCmd("sm_dodance",         Command_Do_Emotes,          "sm_dodance [Emote ID]");
     RegConsoleCmd("sm_stopemote",       Command_Stop,               "Stop emoting. If admin, targets can be provided.");
@@ -375,9 +375,9 @@ public void OnPluginStart()
     g_cvHidePlayers   = CreateConVar("sm_emotes_hide_enemies",         "0",    "(Players) Hide enemy players when dancing", FCVAR_NOTIFY);
     g_cvTeleportBack  = CreateConVar("sm_emotes_teleportonend",        "1",    "(Players) Teleport back to position where dance started.", FCVAR_NOTIFY);
     g_cvSpeed         = CreateConVar("sm_emotes_speed",                "0.84", "Sets the playback speed of the animation.", FCVAR_PROTECTED);
-    g_cvFastCull =      CreateConVar("sm_emotes_fastcull",             "1",   "Fastcull bonemerge. Shadows tend to cut off more but don't jump around sporadically.", FCVAR_NOTIFY);
-    g_cvTeleportFix =   CreateConVar("sm_emotes_teleportfix",          "1",   "(Players) Stop emote if player teleports.", FCVAR_NOTIFY);
-    g_cvSafety =        CreateConVar("sm_emotes_crashguard",           "1",   "Prevents entities from being created close to MaxEntities.", FCVAR_NOTIFY);
+    g_cvFastCull =      CreateConVar("sm_emotes_fastcull",             "1",    "Fastcull bonemerge. Shadows tend to cut off more but don't jump around sporadically.", FCVAR_NOTIFY);
+    g_cvTeleportFix =   CreateConVar("sm_emotes_teleportfix",          "1",    "(Players) Stop emote if player teleports.", FCVAR_NOTIFY);
+    g_cvSafety =        CreateConVar("sm_emotes_crashguard",           "1",    "Prevents entities from being created close to MaxEntities.", FCVAR_NOTIFY);
 
     g_cvProbabilityWitch = CreateConVar("sm_emotes_pwitch", "0.25",
     "Probability for Witches to do a random dance on spawn. 0 to disable.",
@@ -1084,6 +1084,29 @@ Action Command_Menu(int client, int args)
 {
     if (!IsValidClient(client) || IsFakeClient(client))
         return Plugin_Handled;
+    if (args>0)
+    {
+        bool valid;
+        int amount;
+        char arg[8];
+        GetCmdArg(1,arg,8);
+        if (strcmp(arg,"stop",false)==0)
+        {
+            amount = PERFORM_STOP;
+            valid = true;
+        }
+        else if (GetCmdArgIntEx(1,amount))
+        {
+            amount -= 1; // convert 1-based to 0-based Emote I
+            if (PERFORM_RANDOM_ALL<=amount<TOTAL_COUNT)
+                valid = true;
+        }
+        if (valid)
+        {
+            PerformEmote(client,client,GetAmount(amount));
+            return Plugin_Handled;
+        }
+    }
     Menu_Dance(client);
     return Plugin_Handled;
 }
@@ -1612,6 +1635,8 @@ Action CreateEmote(int ent, int amount, int client = 0)
         return Plugin_Handled;
     }
 
+    ApplyCooldown(ent);
+
     L4DTeam team = L4DTeam_Infected;
 
     switch (EmoteClass)
@@ -1631,7 +1656,7 @@ Action CreateEmote(int ent, int amount, int client = 0)
                 return Plugin_Handled;
             }
 
-            if (!IsEntityDancing(ent) && GetEntProp(ent, Prop_Send, "moveparent")>0)
+            if (!IsEntityDancing(ent) && GetEntPropEnt(ent, Prop_Send, "moveparent")>0)
             {
                 if (IsClient && ent==client) CReplyToCommand(ent, "%t", "CANNOT_USE_NOW");
                 return Plugin_Handled;
@@ -1942,6 +1967,7 @@ Action CreateEmote(int ent, int amount, int client = 0)
     {
         effects = GetEntProp(ent,Prop_Send,"m_fEffects");
         effects |= EF_BONEMERGE|EF_PARENT_ANIMATES|EF_BONEMERGE_FASTCULL; // need fastcull here or camera will shake
+        effects |= EF_NOSHADOW|EF_NORECEIVESHADOW;
         SetEntProp(ent,Prop_Send,"m_fEffects",effects);
     }
 
@@ -1959,8 +1985,6 @@ Action CreateEmote(int ent, int amount, int client = 0)
     AcceptEntityInput(EmoteEnt, "SetAnimation", -1, -1, 0);
     SetEntPropFloat(EmoteEnt, Prop_Send, "m_flCycle", 0.0);
     SetEntPropFloat(EmoteEnt, Prop_Send, "m_flPlaybackRate", g_cvSpeed.FloatValue);
-
-    ApplyCooldown(ent);
 
     if (g_EmoteForward != null)
     {
@@ -2036,7 +2060,7 @@ stock bool CanInfectedDance(int ent)
         //LogMessage("CanInfectedDance health");
         return false;
     }
-    if (GetEntProp(ent, Prop_Send, "moveparent")>0)
+    if (GetEntPropEnt(ent, Prop_Send, "moveparent")>0)
     {
         //LogMessage("CanInfectedDance moveparent");
         return false;
@@ -2073,7 +2097,7 @@ stock bool CanWitchDance(int ent)
         //LogMessage("CanWitchDance health");
         return false;
     }
-    if (GetEntProp(ent, Prop_Send, "moveparent")>0)
+    if (GetEntPropEnt(ent, Prop_Send, "moveparent")>0)
     {
         //LogMessage("CanWitchDance moveparent");
         return false;
@@ -2104,7 +2128,7 @@ stock bool CanWitchDance(int ent)
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse)
 {
     if (!IsEntityDancing(client)) return Plugin_Continue;
-    if (GetEntProp(client, Prop_Send, "moveparent")<=0)
+    if (GetEntPropEnt(client, Prop_Send, "moveparent")<=0)
     {
         StopEmote(client); // No parent, emote entity probably got destroyed.
         return Plugin_Continue;
@@ -2203,13 +2227,23 @@ void StopEmote(int ent)
     bool valid_client = EmoteClass==EMOTECLASS_PLAYER;
 
     int iEmoteEnt = EntRefToEntIndex(g_Dancers[dancer].emoteRef);
-    if (iEmoteEnt>0 && IsValidEntity(iEmoteEnt))
+    int parent =    valid_ent ? GetEntPropEnt(ent, Prop_Send, "moveparent") : -1;
+
+    // Clear parent, unless the parent is not what we expected (maybe from another plugin?)
+    if ( valid_client && (parent<=0 || parent==iEmoteEnt) )
     {
-        if (valid_client) AcceptEntityInput(ent, "ClearParent");
-        CleanRemoveEntity(iEmoteEnt);
-        if (valid_client && g_cvTeleportBack.BoolValue)
-            TeleportEntity(ent, g_fLastPosition[ent], g_fLastAngles[ent], valid_client ? NULL_VECTOR : {0.0,0.0,0.0});
+        if (parent>0) AcceptEntityInput(ent, "ClearParent");
+        if (g_cvTeleportBack.BoolValue)
+            TeleportEntity(ent, g_fLastPosition[ent], g_fLastAngles[ent], NULL_VECTOR);
+        // Remove bonemerge flags, hopefully that fixes the shadow issue
+        int effects = GetEntProp(ent, Prop_Send, "m_fEffects");
+        effects &= ~(EF_BONEMERGE|EF_BONEMERGE_FASTCULL|EF_PARENT_ANIMATES);
+        effects |= EF_NOSHADOW|EF_NORECEIVESHADOW;
+        SetEntProp(ent, Prop_Send, "m_fEffects", effects);
     }
+
+    if (iEmoteEnt>0 && IsValidEntity(iEmoteEnt))
+        CleanRemoveEntity(iEmoteEnt);
 
     if (valid_ent)
     {
@@ -2283,11 +2317,23 @@ void TerminateEmote(int ent)
     bool valid_client = EmoteClass==EMOTECLASS_PLAYER;
 
     int iEmoteEnt = EntRefToEntIndex(g_Dancers[g_iDancers[ent]].emoteRef);
-    if (iEmoteEnt>0 && IsValidEntity(iEmoteEnt))
+    int parent =    valid_ent ? GetEntPropEnt(ent, Prop_Send, "moveparent") : -1;
+
+    // Clear parent, unless the parent is not what we expected (maybe from another plugin?)
+    if ( valid_client && (parent<=0 || parent==iEmoteEnt) )
     {
-        if (valid_client) AcceptEntityInput(ent, "ClearParent");
-        CleanRemoveEntity(iEmoteEnt);
+        if (parent>0) AcceptEntityInput(ent, "ClearParent");
+        if (g_cvTeleportBack.BoolValue)
+            TeleportEntity(ent, g_fLastPosition[ent], g_fLastAngles[ent], NULL_VECTOR);
+        // Remove bonemerge flags, hopefully that fixes the shadow issue
+        int effects = GetEntProp(ent, Prop_Send, "m_fEffects");
+        effects &= ~(EF_BONEMERGE|EF_BONEMERGE_FASTCULL|EF_PARENT_ANIMATES);
+        effects |= EF_NOSHADOW|EF_NORECEIVESHADOW;
+        SetEntProp(ent, Prop_Send, "m_fEffects", effects);
     }
+
+    if (iEmoteEnt>0 && IsValidEntity(iEmoteEnt))
+        CleanRemoveEntity(iEmoteEnt);
     
     if (valid_ent)    StopEmoteSound(ent);
     RemoveSkin(ent);
@@ -2964,9 +3010,4 @@ stock void NextFrame_Kill(const int entref)
 stock void SET_TRANSMIT_ALWAYS(int entity)
 {
     SetEdictFlags(entity, GetEdictFlags(entity)|FL_EDICT_ALWAYS);
-}
-
-stock void DISABLE_TRANSMIT_ALWAYS(int entity)
-{
-    SetEdictFlags(entity, GetEdictFlags(entity)&~FL_EDICT_ALWAYS);
 }
